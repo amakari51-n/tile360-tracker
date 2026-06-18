@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tile 360 Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #ffffff; --bg2: #f5f5f3; --bg3: #eeede9;
+    --text: #1a1a18; --text2: #6b6b68; --text3: #a0a09e;
+    --border: rgba(0,0,0,0.12); --border2: rgba(0,0,0,0.22);
+    --blue-bg: #e6f1fb; --blue-text: #185fa5;
+    --green: #3B6D11; --amber: #BA7517; --gray: #888780;
+    --radius: 8px; --radius-lg: 12px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a; --bg2: #252523; --bg3: #2e2e2b;
+      --text: #f0efe9; --text2: #9b9b97; --text3: #606060;
+      --border: rgba(255,255,255,0.1); --border2: rgba(255,255,255,0.2);
+      --blue-bg: #0c2e50; --blue-text: #85b7eb;
+      --green: #97C459; --amber: #EF9F27;
+    }
+  }
+  html, body { height: 100%; font-family: var(--font); background: var(--bg3); color: var(--text); }
+  .app { display: flex; height: 100vh; overflow: hidden; }
+
+  .sidebar { width: 300px; min-width: 300px; display: flex; flex-direction: column; background: var(--bg); border-right: 0.5px solid var(--border); }
+  .sidebar-top { padding: 16px; border-bottom: 0.5px solid var(--border); }
+  .logo { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .logo-mark { width: 28px; height: 28px; background: var(--text); border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .logo-mark svg { width: 15px; height: 15px; fill: none; stroke: var(--bg); stroke-width: 2.2; }
+  .logo h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+  .badge { margin-left: auto; font-size: 11px; background: var(--blue-bg); color: var(--blue-text); padding: 2px 8px; border-radius: 20px; font-weight: 500; white-space: nowrap; }
+  .search-wrap { position: relative; }
+  .search-wrap svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 13px; height: 13px; stroke: var(--text3); fill: none; stroke-width: 2; pointer-events: none; }
+  .search-wrap input { width: 100%; padding: 7px 10px 7px 30px; font-size: 13px; border: 0.5px solid var(--border2); border-radius: var(--radius); background: var(--bg2); color: var(--text); font-family: var(--font); outline: none; }
+  .search-wrap input:focus { border-color: var(--blue-text); }
+
+  .filter-bar { padding: 8px 12px; display: flex; gap: 6px; border-bottom: 0.5px solid var(--border); }
+  .chip { font-size: 11px; padding: 4px 12px; border-radius: 20px; border: 0.5px solid var(--border2); cursor: pointer; background: transparent; color: var(--text2); font-family: var(--font); transition: all 0.1s; }
+  .chip:hover { background: var(--bg2); }
+  .chip.active { background: var(--text); color: var(--bg); border-color: transparent; }
+
+  .tile-list { flex: 1; overflow-y: auto; }
+  .tile-list::-webkit-scrollbar { width: 4px; }
+  .tile-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+  .tile-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; border-bottom: 0.5px solid var(--border); transition: background 0.1s; }
+  .tile-item:hover { background: var(--bg2); }
+  .tile-item.sel { background: var(--blue-bg); }
+  .tile-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .tile-info { flex: 1; min-width: 0; }
+  .tile-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile-meta { font-size: 11px; color: var(--text2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile-item.sel .tile-name { color: var(--blue-text); }
+  .tile-item.sel .tile-meta { color: var(--blue-text); opacity: 0.7; }
+  .tile-batt { font-size: 11px; color: var(--text3); flex-shrink: 0; }
+  .empty { text-align: center; padding: 48px 20px; color: var(--text2); font-size: 13px; line-height: 1.8; }
+
+  .map-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .map-bar { padding: 9px 14px; background: var(--bg); border-bottom: 0.5px solid var(--border); display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .status-txt { flex: 1; font-size: 12px; color: var(--text2); }
+  .map-bar button { font-size: 12px; padding: 5px 12px; border: 0.5px solid var(--border2); border-radius: var(--radius); background: transparent; color: var(--text); cursor: pointer; font-family: var(--font); white-space: nowrap; }
+  .map-bar button:hover { background: var(--bg2); }
+  #map { flex: 1; }
+
+  .detail { position: absolute; bottom: 16px; right: 16px; width: 244px; background: var(--bg); border: 0.5px solid var(--border2); border-radius: var(--radius-lg); padding: 14px; display: none; z-index: 1000; box-shadow: 0 4px 24px rgba(0,0,0,0.13); }
+  .detail.open { display: block; }
+  .detail-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .detail-head span { font-size: 13px; font-weight: 500; }
+  .detail-head button { background: none; border: none; cursor: pointer; color: var(--text2); font-size: 20px; line-height: 1; padding: 0; }
+  .detail label { font-size: 11px; color: var(--text2); display: block; margin-top: 8px; margin-bottom: 3px; }
+  .detail input, .detail textarea { width: 100%; font-size: 12px; padding: 6px 8px; border: 0.5px solid var(--border2); border-radius: var(--radius); background: var(--bg2); color: var(--text); font-family: var(--font); outline: none; }
+  .detail input:focus, .detail textarea:focus { border-color: var(--blue-text); }
+  .detail textarea { height: 54px; resize: none; }
+  .detail-rows { margin-top: 10px; border-top: 0.5px solid var(--border); padding-top: 8px; display: grid; gap: 4px; }
+  .detail-row { display: flex; justify-content: space-between; font-size: 11px; }
+  .detail-row .lbl { color: var(--text2); }
+  .detail-row .val { font-weight: 500; }
+  .save-btn { width: 100%; margin-top: 10px; padding: 7px; font-size: 12px; border: none; border-radius: var(--radius); background: var(--text); color: var(--bg); cursor: pointer; font-family: var(--font); font-weight: 500; transition: opacity 0.15s; }
+  .save-btn:hover { opacity: 0.82; }
+
+  .overlay { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 32px; z-index: 9999; }
+  .overlay.hidden { display: none; }
+  .ov-icon { width: 52px; height: 52px; background: var(--bg2); border-radius: 14px; display: flex; align-items: center; justify-content: center; }
+  .ov-icon svg { width: 26px; height: 26px; fill: none; stroke: var(--text2); stroke-width: 1.8; }
+  .overlay h2 { font-size: 19px; font-weight: 600; letter-spacing: -0.4px; }
+  .overlay p { font-size: 13px; color: var(--text2); text-align: center; max-width: 340px; line-height: 1.65; }
+  .overlay input { width: 100%; max-width: 320px; padding: 10px 12px; font-size: 14px; border: 0.5px solid var(--border2); border-radius: var(--radius); background: var(--bg2); color: var(--text); font-family: var(--font); outline: none; }
+  .overlay input:focus { border-color: var(--blue-text); }
+  .ov-btn { width: 100%; max-width: 320px; padding: 11px; font-size: 14px; background: var(--text); color: var(--bg); border: none; border-radius: var(--radius); cursor: pointer; font-family: var(--font); font-weight: 500; }
+  .ov-btn:hover { opacity: 0.85; }
+  .divider { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 320px; }
+  .divider hr { flex: 1; border: none; border-top: 0.5px solid var(--border2); }
+  .divider span { font-size: 11px; color: var(--text3); }
+  .demo-link { font-size: 12px; color: var(--blue-text); background: none; border: none; cursor: pointer; font-family: var(--font); text-decoration: underline; }
+  .notice { font-size: 11px; color: var(--text3); text-align: center; max-width: 320px; line-height: 1.6; }
+  .err-msg { font-size: 12px; color: #c0392b; background: #fdecea; padding: 8px 12px; border-radius: var(--radius); width: 100%; max-width: 320px; display: none; text-align: center; }
+  .err-msg.show { display: block; }
+
+  .leaflet-popup-content-wrapper { border-radius: var(--radius); font-family: var(--font); font-size: 13px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+  .leaflet-popup-content { margin: 10px 14px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div class="overlay" id="overlay">
+  <div class="ov-icon">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="3" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="21"/><line x1="3" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="21" y2="12"/></svg>
+  </div>
+  <h2>Tile 360 Tracker</h2>
+  <p>Sign in with your Tile account to load all your trackers onto the map.</p>
+  <input type="email" id="inp-email" placeholder="Tile account email" autocomplete="email" />
+  <input type="password" id="inp-pw" placeholder="Tile account password" autocomplete="current-password" />
+  <div class="err-msg" id="err-msg"></div>
+  <button class="ov-btn" id="login-btn" onclick="connectTile()">Connect & load tiles</button>
+  <div class="divider"><hr><span>or</span><hr></div>
+  <button class="demo-link" onclick="loadDemo()">Try with demo data — no account needed</button>
+  <p class="notice">Credentials are sent only to your own server to authenticate with Tile. They are never stored anywhere.</p>
+</div>
+
+<div class="app">
+  <div class="sidebar">
+    <div class="sidebar-top">
+      <div class="logo">
+        <div class="logo-mark">
+          <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+        </div>
+        <h1>Tile Tracker</h1>
+        <span class="badge" id="tile-count">0 tiles</span>
+      </div>
+      <div class="search-wrap">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search" placeholder="Search tiles…" oninput="renderList()" />
+      </div>
+    </div>
+    <div class="filter-bar">
+      <button class="chip active" onclick="setFilter('all',this)">All</button>
+      <button class="chip" onclick="setFilter('online',this)">Online</button>
+      <button class="chip" onclick="setFilter('stale',this)">Stale</button>
+      <button class="chip" onclick="setFilter('offline',this)">Offline</button>
+    </div>
+    <div class="tile-list" id="tile-list">
+      <div class="empty">Sign in to load your tiles,<br>or try the demo below.</div>
+    </div>
+  </div>
+
+  <div class="map-area" style="position:relative">
+    <div class="map-bar">
+      <span class="status-txt" id="status-txt">Not connected</span>
+      <button id="refresh-btn" onclick="refreshTiles()" style="display:none">↻ Refresh</button>
+      <button onclick="showLogin()">⚙ Account</button>
+    </div>
+    <div id="map"></div>
+
+    <div class="detail" id="detail">
+      <div class="detail-head">
+        <span>Edit tile</span>
+        <button onclick="closeDetail()">×</button>
+      </div>
+      <label>Label</label>
+      <input type="text" id="d-label" placeholder="e.g. Car keys" />
+      <label>Notes</label>
+      <textarea id="d-notes" placeholder="Any extra details…"></textarea>
+      <div class="detail-rows">
+        <div class="detail-row"><span class="lbl">Status</span><span class="val" id="d-status"></span></div>
+        <div class="detail-row"><span class="lbl">Last seen</span><span class="val" id="d-lastseen"></span></div>
+        <div class="detail-row"><span class="lbl">Battery</span><span class="val" id="d-battery"></span></div>
+        <div class="detail-row"><span class="lbl">Coordinates</span><span class="val" id="d-coords"></span></div>
+      </div>
+      <button class="save-btn" id="save-btn" onclick="saveLabel()">Save label</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let map, tiles = [], markers = {}, selectedUuid = null, activeFilter = 'all';
+let labels = JSON.parse(localStorage.getItem('tile-labels') || '{}');
+let notes  = JSON.parse(localStorage.getItem('tile-notes')  || '{}');
+let sessionToken = null;
+
+const BASE = '';  // same origin — proxy handles /api/*
+
+window.addEventListener('DOMContentLoaded', () => {
+  map = L.map('map').setView([-25.27, 133.78], 4);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19
+  }).addTo(map);
+});
+
+function statusOf(t) {
+  if (!t.last_tile_state?.timestamp) return 'offline';
+  const mins = (Date.now() - new Date(t.last_tile_state.timestamp)) / 60000;
+  if (mins < 60)   return 'online';
+  if (mins < 1440) return 'stale';
+  return 'offline';
+}
+function dotColor(t) {
+  const s = statusOf(t);
+  return s === 'online' ? '#3B6D11' : s === 'stale' ? '#BA7517' : '#888780';
+}
+function timeAgo(ts) {
+  if (!ts) return 'never';
+  const m = Math.round((Date.now() - new Date(ts)) / 60000);
+  if (m < 2) return 'just now';
+  if (m < 60) return m + 'm ago';
+  if (m < 1440) return Math.round(m/60) + 'h ago';
+  return Math.round(m/1440) + 'd ago';
+}
+
+function renderList() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const el = document.getElementById('tile-list');
+  const filtered = tiles.filter(t => {
+    const name = (labels[t.uuid] || t.name || '').toLowerCase();
+    if (q && !name.includes(q)) return false;
+    if (activeFilter !== 'all' && statusOf(t) !== activeFilter) return false;
+    return true;
+  });
+  document.getElementById('tile-count').textContent = tiles.length + ' tile' + (tiles.length !== 1 ? 's' : '');
+  if (!filtered.length) { el.innerHTML = '<div class="empty">No tiles match.</div>'; return; }
+  el.innerHTML = filtered.map(t => {
+    const name = labels[t.uuid] || t.name || 'Unnamed';
+    const lat  = t.last_tile_state?.latitude;
+    const lng  = t.last_tile_state?.longitude;
+    const batt = t.last_tile_state?.battery;
+    const sel  = selectedUuid === t.uuid ? ' sel' : '';
+    const meta = statusOf(t) + ' · ' + timeAgo(t.last_tile_state?.timestamp) + (lat ? ` · ${lat.toFixed(3)}, ${lng.toFixed(3)}` : '');
+    return `<div class="tile-item${sel}" onclick="selectTile('${t.uuid}')">
+      <div class="tile-dot" style="background:${dotColor(t)}"></div>
+      <div class="tile-info">
+        <div class="tile-name">${name}</div>
+        <div class="tile-meta">${meta}</div>
+      </div>
+      <div class="tile-batt">${batt ? batt + '%' : '—'}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderMarkers() {
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  markers = {};
+  tiles.forEach(t => {
+    const lat = t.last_tile_state?.latitude, lng = t.last_tile_state?.longitude;
+    if (!lat || !lng) return;
+    const name = labels[t.uuid] || t.name || 'Tile';
+    const color = dotColor(t);
+    const icon = L.divIcon({
+      html: `<div style="width:14px;height:14px;background:${color};border-radius:50%;border:2.5px solid white;box-shadow:0 1px 6px rgba(0,0,0,0.35)"></div>`,
+      className: '', iconSize: [14,14], iconAnchor: [7,7], popupAnchor: [0,-10]
+    });
+    const m = L.marker([lat,lng], {icon}).addTo(map);
+    m.bindPopup(`<b>${name}</b><br><span style="font-size:11px;color:#666">${statusOf(t)} · ${timeAgo(t.last_tile_state?.timestamp)}</span>`);
+    m.on('click', () => selectTile(t.uuid));
+    markers[t.uuid] = m;
+  });
+  const pts = tiles.filter(t => t.last_tile_state?.latitude).map(t => [t.last_tile_state.latitude, t.last_tile_state.longitude]);
+  if (pts.length) map.fitBounds(pts, {padding:[50,50], maxZoom:14});
+}
+
+function selectTile(uuid) {
+  selectedUuid = uuid;
+  renderList();
+  const t = tiles.find(x => x.uuid === uuid);
+  if (!t) return;
+  document.getElementById('detail').classList.add('open');
+  document.getElementById('d-label').value    = labels[uuid] || t.name || '';
+  document.getElementById('d-notes').value    = notes[uuid]  || '';
+  document.getElementById('d-status').textContent   = statusOf(t);
+  document.getElementById('d-lastseen').textContent = timeAgo(t.last_tile_state?.timestamp);
+  document.getElementById('d-battery').textContent  = t.last_tile_state?.battery ? t.last_tile_state.battery + '%' : '—';
+  const lat = t.last_tile_state?.latitude, lng = t.last_tile_state?.longitude;
+  document.getElementById('d-coords').textContent   = lat ? lat.toFixed(5) + ', ' + lng.toFixed(5) : '—';
+  if (lat && markers[uuid]) { map.panTo([lat,lng]); markers[uuid].openPopup(); }
+}
+
+function closeDetail() {
+  selectedUuid = null;
+  document.getElementById('detail').classList.remove('open');
+  renderList();
+}
+
+function saveLabel() {
+  if (!selectedUuid) return;
+  const lbl = document.getElementById('d-label').value.trim();
+  const n   = document.getElementById('d-notes').value.trim();
+  if (lbl) labels[selectedUuid] = lbl; else delete labels[selectedUuid];
+  if (n)   notes[selectedUuid]  = n;   else delete notes[selectedUuid];
+  localStorage.setItem('tile-labels', JSON.stringify(labels));
+  localStorage.setItem('tile-notes',  JSON.stringify(notes));
+  renderList(); renderMarkers();
+  const btn = document.getElementById('save-btn');
+  btn.textContent = 'Saved ✓'; btn.style.background = '#3B6D11';
+  setTimeout(() => { btn.textContent = 'Save label'; btn.style.background = ''; }, 1600);
+}
+
+function setFilter(f, el) {
+  activeFilter = f;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderList();
+}
+
+function showError(msg) {
+  const el = document.getElementById('err-msg');
+  el.textContent = msg; el.classList.add('show');
+}
+function clearError() { document.getElementById('err-msg').classList.remove('show'); }
+
+async function connectTile() {
+  const email = document.getElementById('inp-email').value.trim();
+  const pw    = document.getElementById('inp-pw').value;
+  if (!email || !pw) { showError('Enter your email and password.'); return; }
+  clearError();
+  const btn = document.getElementById('login-btn');
+  btn.textContent = 'Connecting…'; btn.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append('email', email); fd.append('password', pw);
+    const res  = await fetch(BASE + '/api/login', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Login failed');
+    sessionToken = data.session_token;
+    await fetchTiles();
+    document.getElementById('overlay').classList.add('hidden');
+  } catch(e) {
+    showError(e.message);
+  } finally {
+    btn.textContent = 'Connect & load tiles'; btn.disabled = false;
+  }
+}
+
+async function fetchTiles() {
+  const res  = await fetch(BASE + '/api/tiles?session_token=' + encodeURIComponent(sessionToken));
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || 'Could not fetch tiles');
+  tiles = data.tiles;
+  finishedLoading();
+}
+
+async function refreshTiles() {
+  const btn = document.getElementById('refresh-btn');
+  btn.textContent = '↻ Refreshing…'; btn.disabled = true;
+  try { await fetchTiles(); } catch(e) { alert('Refresh failed: ' + e.message); }
+  btn.textContent = '↻ Refresh'; btn.disabled = false;
+}
+
+function finishedLoading() {
+  document.getElementById('refresh-btn').style.display = '';
+  document.getElementById('status-txt').textContent = tiles.length + ' tiles · ' + new Date().toLocaleTimeString();
+  renderList(); renderMarkers();
+}
+
+function showLogin() { document.getElementById('overlay').classList.remove('hidden'); }
+
+function loadDemo() {
+  const names = ['Car keys','Wallet','Backpack','Laptop bag','Dog collar','Bike lock','Luggage','Guitar case','Work bag','Kids backpack','Scooter','Camera bag','Toolbox','Gym bag','Boat keys','Drone case','Skateboard','Trailer hitch'];
+  const ages  = [5,20,90,125,250,1500,30,45,200,15,60,2880,10,400,1200,35,55,180];
+  tiles = names.map((name, i) => ({
+    uuid: 'demo-' + i, name,
+    last_tile_state: {
+      latitude:  -33.865 + (Math.random()-0.5) * 8,
+      longitude: 151.209 + (Math.random()-0.5) * 12,
+      timestamp: new Date(Date.now() - ages[i]*60000).toISOString(),
+      battery:   Math.round(20 + Math.random()*80)
+    }
+  }));
+  document.getElementById('status-txt').textContent = 'Demo mode · ' + tiles.length + ' tiles';
+  document.getElementById('overlay').classList.add('hidden');
+  finishedLoading();
+}
+</script>
+</body>
+</html>
